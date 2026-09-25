@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>טוקיו — תוכנית מאסטר עם מפה</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1d2129; --text:#e8e9ec; --muted:#9aa1ac;
+    --good:#3ecf8e; --bad:#ff6b6b; --warn:#f5b83d; --accent:#5aa9ff; --border:#2a2f3a;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{background:var(--bg);color:var(--text);font-family:"Segoe UI","Arial Hebrew","Noto Sans Hebrew",Arial,sans-serif;line-height:1.7;overflow:hidden;}
+
+  /* split layout: text on the right (RTL first column), map on the left */
+  .layout{display:grid;grid-template-columns:1fr 1fr;height:100vh;}
+  .text-pane{overflow-y:auto;padding:26px 26px 80px;}
+  .map-pane{position:relative;border-inline-start:1px solid var(--border);display:flex;flex-direction:column;}
+  #map{flex:1;}
+  .day-btns{display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:var(--card);border-bottom:1px solid var(--border);}
+  @media (max-width:900px){
+    body{overflow:auto;}
+    .layout{grid-template-columns:1fr;height:auto;}
+    .map-pane{height:60vh;position:sticky;top:0;z-index:5;order:-1;}
+    .text-pane{overflow:visible;}
+  }
+
+  h1{font-size:1.6rem;margin:0 0 4px;}
+  .subtitle{color:var(--muted);margin-bottom:16px;font-size:.95rem;}
+  h2{font-size:1.2rem;margin-top:40px;padding-bottom:8px;border-bottom:2px solid var(--border);color:var(--accent);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin:12px 0;}
+  .card.warn{border-right:5px solid var(--warn);}
+  .card.add{border-right:5px solid var(--good);}
+  .card.q{border-right:5px solid var(--accent);}
+  .card ul{margin:6px 0 0;padding-inline-start:22px;}
+  .card li{margin-bottom:7px;}
+  .card h3{margin:0 0 6px;font-size:1rem;color:#fff;}
+  .tag{display:inline-block;font-size:.68rem;font-weight:800;padding:1px 8px;border-radius:20px;margin-inline-end:6px;vertical-align:middle;white-space:nowrap;}
+  .tag.must{background:rgba(90,169,255,.15);color:var(--accent);}
+  .tag.opt{background:rgba(154,161,172,.18);color:var(--muted);}
+  .tag.new{background:rgba(62,207,142,.15);color:var(--good);}
+  .tag.split{background:rgba(192,132,252,.15);color:#c084fc;}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted);margin:6px 0 12px;}
+
+  .day-btns button{background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:20px;padding:4px 11px;font-size:.8rem;cursor:pointer;font-family:inherit;}
+  .day-btns button.active{border-color:var(--accent);color:#fff;box-shadow:0 0 0 1px var(--accent) inset;}
+  .day-btns button .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-inline-end:6px;vertical-align:middle;}
+  .num-icon{border-radius:50%;color:#0f1115;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #0f1115;box-shadow:0 1px 4px rgba(0,0,0,.6);}
+  .num-icon.opt{background:#fff !important;border:2px dashed;color:#111;}
+  .home-icon{font-size:22px;line-height:1;}
+  .leaflet-popup-content{direction:rtl;text-align:right;font-family:"Segoe UI","Arial Hebrew",Arial,sans-serif;}
+
+  .day{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin:16px 0;border-top:4px solid var(--c);scroll-margin-top:10px;}
+  .day.current{box-shadow:0 0 0 1px var(--c);}
+  .day-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;}
+  .day-head .date{font-size:1.05rem;font-weight:800;color:#fff;}
+  .day-head .theme{color:var(--c);font-weight:700;font-size:.92rem;}
+  .status{font-size:.72rem;font-weight:800;padding:2px 10px;border-radius:20px;margin-inline-start:8px;}
+  .status.locked{background:rgba(62,207,142,.15);color:var(--good);}
+  .status.open{background:rgba(245,184,61,.15);color:var(--warn);}
+  .transit{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 6px;font-size:.84rem;}
+  .transit span{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:3px 10px;}
+  .transit b{color:#fff;}
+  .step{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:.92rem;cursor:pointer;}
+  .step:hover{background:rgba(255,255,255,.03);}
+  .step:last-child{border-bottom:none;}
+  .step .n{min-width:24px;height:24px;border-radius:50%;background:var(--c);color:#0f1115;font-weight:800;font-size:.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+  .step.opt .n{background:transparent;border:2px dashed var(--c);color:var(--text);}
+  .step .n.none{background:transparent;border:none;color:var(--muted);}
+  .step.move{cursor:default;color:var(--muted);font-size:.86rem;}
+  .step .t{min-width:80px;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0;}
+  .step .d{color:var(--muted);font-size:.84rem;display:block;}
+  .note{margin-top:10px;font-size:.86rem;color:var(--muted);background:rgba(90,169,255,.06);border:1px solid rgba(90,169,255,.2);border-radius:10px;padding:8px 12px;}
+  .note b{color:#fff;}
+  .links{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;}
+  .links a{font-size:.82rem;color:var(--accent);text-decoration:none;border:1px solid rgba(90,169,255,.35);border-radius:8px;padding:3px 9px;}
+  .links a:hover{background:rgba(90,169,255,.1);}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:.86rem;}
+  th,td{border:1px solid var(--border);padding:7px 10px;text-align:right;vertical-align:top;}
+  th{background:var(--card2);color:var(--accent);}
+  footer{margin-top:40px;color:var(--muted);font-size:.8rem;text-align:center;}
+</style>
+</head>
+<body>
+<div class="layout">
+
+ <!-- ================= TEXT ================= -->
+ <div class="text-pane" id="textPane">
+  <h1>🗼 טוקיו: תוכנית מאסטר</h1>
+  <div class="subtitle">30/10–7/11 · כל מקום פעם אחת · כשגוללים, המפה עוברת ליום שקוראים · לחיצה על שורה מראה אותה במפה</div>
+
+  <div class="legend">
+    <span><span class="tag must">חובה</span>עוגן</span>
+    <span><span class="tag opt">אופציונלי</span>אם יש זמן. במפה: עיגול לבן מקווקו.</span>
+    <span><span class="tag new">רעיון שלי</span>לא היה בתוכנית שלכם</span>
+    <span><span class="tag split">🛍️ פיצול</span>הבנות בקניות, הבנים במשהו אחר</span>
+    <span>🚆 זמן בתחבורה, בלי המתנות</span>
+  </div>
+
+  <div class="card q">
+    <h3>☀️ הבוקר של ראשון 1/11, והאם היום עמוס מדי</h3>
+    <p style="margin:0 0 6px">אתה צודק בשני הדברים:</p>
+    <ul>
+      <li><b>בוקר ריק זה בסדר, וזה נכון.</b> בליל האלווין חוזרים בסביבות חצות, אז <b>בראשון קמים לאט ויוצאים ב-10:30</b>. הדברים המיוחדים של ראשון ממילא מתחילים רק בצהריים: הרוקבילי בסביבות 12:00, המדרחוב באקיהברה ב-13:00. אין מה "להפסיד" בבוקר.</li>
+      <li><b>כן, בגרסה הקודמת היום היה עמוס מדי.</b> ג'יבלי במיטאקה דרש לצאת ב-09:15 (אחרי לילה מאוחר), הוסיף כשעה וחצי של נסיעות ושבר את הגיאוגרפיה. <b>ג'יבלי יורד.</b> הוא לא נכנס לאף יום בלי להקריב משהו שקורה רק בראשון.</li>
+      <li>הקאבוקי בערב הפך ל<span class="tag opt">אופציונלי</span>. אם אחרי אקיהברה יש כוח, הולכים. אם לא, הביתה.</li>
+      <li><b>אין חובה בבוקר, בכוונה.</b> לא נועלים כלום, כדי שאם חוזרים מאוחר אפשר פשוט לישון. למי שקם יש שלוש אפשרויות טובות: Hama-rikyū ליד הבית, גן Nezu, או שוק הפשפשים ב-Tōgō. שתי האחרונות נמצאות ממש על הדרך להראג'וקו.</li>
+    </ul>
+  </div>
+
+  <div class="card add">
+    <h3>🎯 מה השתנה לפי מה שסיפרת לי על הטעם שלכם</h3>
+    <ul>
+      <li><b>יפן המוזרה:</b> נוספו החתול בתלת-ממד בשינג'וקו, בית הגאצ'פון באקיהברה ו-MEGA Don Quijote בשיבויה. מקומות נוספים נמצאים ב"בנק" שבסוף העמוד.</li>
+      <li><b>סדנאות:</b> נוספו שתיים. <b>אוכל פלסטיק מזויף</b> בקאפבאשי (<b>5/11</b>, ולא ביום שישי) ו-<b>Edo Kiriko</b>, חריטה בזכוכית, בסומידה (6/11 אפשרות B). <b>סדנה של חישול סכינים</b> עדיף לעשות ב-<b>Sakai</b> ליד אוסקה, בימים 25–27/11. בטוקיו רק קונים סכינים.</li>
+      <li><b>פיצול לפי קניות:</b> ב-1/11 אחר הצהריים וב-6/11. בזמן שהבנות בקניות, הבנים באקיהברה או בסדנה, ונפגשים שוב בגינזה.</li>
+      <li><b>בלי טבע נוסף בטוקיו.</b> ניקו מספיק. אוכל אתם סוחבים מהבית, אז לא תכננתי עצירות אוכל.</li>
+    </ul>
+  </div>
+
+  <div id="days"></div>
+
+  <h2>🎲 בנק: יפן המוזרה</h2>
+  <p style="color:var(--muted);font-size:.9rem">כשיום נגמר מוקדם, או כשמתפצלים, שולפים מכאן משהו.</p>
+  <table>
+    <tr><th>מה</th><th>למה</th><th>מתי זה מתאים</th></tr>
+    <tr><td><b>Nakano Broadway</b></td><td>קניון ישן מלא בחנויות אספנות, רטרו ושעונים יד שנייה. אקיהברה בלי התיירים.</td><td>ערב של 3/11 במקום Parco (15 דק׳ משינג'וקו). נפתח בצהריים.</td></tr>
+    <tr><td><b>Gashapon Department Store</b> באיקבוקורו</td><td>יותר מ-3,000 מכונות קפסולות, השיא העולמי.</td><td>ערב פנוי. יחד עם Sunshine 60 ו-Pokémon Center Mega.</td></tr>
+    <tr><td><b>Kyu-Shiba-rikyū</b></td><td>גן יפני קטן ליד Hamamatsucho, 150 ין.</td><td>כל שעה פנויה ליד הבית (לא בשבת).</td></tr>
+    <tr><td><b>קריוקי בחדר פרטי</b></td><td>Big Echo או Karaoke-kan. חדר רק לכם, תפריט שירים באנגלית.</td><td>ערב של 2/11 או 3/11. לכל הארבעה, כשעה.</td></tr>
+    <tr><td><b>ביקור בפאצ'ינקו</b></td><td>אולם משחק מחריש אוזניים. 5 דקות מבחוץ זה מספיק כדי להבין.</td><td>עוברים ליד אחד כזה כל ערב. רק להציץ.</td></tr>
+  </table>
+
+  <h2>🚆 סיכום זמני רכבות</h2>
+  <table id="transitTable"><tr><th>יום</th><th>🚆 תחבורה</th><th>🚶 הליכה</th></tr></table>
+  <div class="card add" style="font-size:.88rem">
+    <b>טיפים לתחבורה:</b>
+    <ul>
+      <li>הדירה נמצאת בין <b>Daimon / Hamamatsucho</b> (8–10 דקות הליכה) לבין <b>Mita / Tamachi</b>. מ-Daimon יש קו Asakusa ישיר לאסאקוסה וקו Ōedo ישיר לשינג'וקו. מ-Hamamatsucho יוצא ה-Yamanote.</li>
+      <li>לאודייבה ולטויוסו: תחנת Yurikamome <b>Hinode</b>, 10 דקות הליכה.</li>
+      <li>Suica בטלפון (Apple Wallet) לכולם. אין צורך בכרטיס יומי, כי אף יום לא מגיע למחיר שבו כרטיס כזה משתלם.</li>
+      <li>במוצאי שבת 31/10 הרכבת האחרונה משינג'וקו יוצאת בסביבות 00:00. מונית הביתה עולה בערך 4,000–5,000 ין לכל הארבעה, ובלילה כזה זה שווה.</li>
+    </ul>
+  </div>
+
+  <h2>⚠️ לבדוק לפני שנוסעים</h2>
+  <div class="card warn">
+    <ul>
+      <li><b>סדנת אוכל מזויף (5/11, 14:00):</b> להזמין ב-Ganso Shokuhin Sample-ya ולבדוק שיש סדנה ביום חמישי.</li>
+      <li><b>סדנאות בשאר הטיול:</b> ראו את הקובץ workshops-trip.html.</li>
+      <li><b>סדנת Edo Kiriko (6/11, אם בוחרים B):</b> להזמין סדנה עם הסבר באנגלית באזור Kinshichō או Sumida.</li>
+      <li><b>חישול סכינים בסאקאי (אוסקה, 25–27/11):</b> לבדוק זמינות ולהזמין. חלק מהסדנאות מתמלאות שבועות מראש.</li>
+      <li><b>קאבוקי-זה (1/11):</b> לבדוק שיש הצגות ב-1/11 ואת שעות המערכות הבודדות.</li>
+      <li><b>יאבוסמה (3/11):</b> שעה מדויקת באתר מקדש מייג'י.</li>
+      <li><b>Shibuya Sky (3/11):</b> להזמין סלוט של 16:00.</li>
+      <li><b>teamLab Planets (2/11, 09:00) ו-Borderless (5/11, 17:30):</b> להזמין מראש.</li>
+      <li><b>רכבת Tobu לניקו (4/11):</b> ההזמנה נפתחת ב-<b>4/10 ב-09:00 שעון יפן</b>. כל ההסבר נמצא ב-nikko-train-booking.html.</li>
+      <li><b>גשם ב-1/11:</b> Borderless עובר ל-1/11, והראג'וקו ואקיהברה עוברים ל-5/11.</li>
+    </ul>
+  </div>
+  <footer>נקודות המפה מקורבות. זמני הנסיעה הם הערכה לפי מסלולים רגילים. לניווט: הקישורים לגוגל מפות בכל יום.</footer>
+ </div>
+
+ <!-- ================= MAP ================= -->
+ <div class="map-pane">
+   <div class="day-btns" id="btns"></div>
+   <div id="map" dir="ltr"></div>
+ </div>
+</div>
+
+<script>
+const HOME = {name:"הדירה (Shiba 2-18-7)", lat:35.65147, lng:139.75110};
+
+// type: must | opt ; isNew: my idea ; move: transit leg (no pin)
+const DAYS = [
+ {id:"d3010", date:"שישי 30/10", theme:"אסאקוסה בבוקר מוקדם ← הביתה לבשל", color:"#ff8a5b", status:"locked",
+  rail:"כ-45 דק׳", walk:"כ-3 ק״מ",
+  stops:[
+   {t:"07:35", name:"🚆 הליכה ל-Daimon, ומשם קו Asakusa ישיר לאסאקוסה (20 דק׳)", move:true},
+   {t:"08:00", name:"שער קמינרימון", type:"must", lat:35.71110, lng:139.79637, d:"ב-08:00 כמעט אין אנשים, זה הזמן לתמונה."},
+   {t:"08:15", name:"מקדש סנסו-ג'י", type:"must", lat:35.71477, lng:139.79666},
+   {t:"09:00", name:"מרפסת מרכז התיירות של אסאקוסה (קומה 8)", type:"opt", isNew:true, lat:35.71066, lng:139.79635, d:"חינם. תצפית על נאקמיסה, המקדש וה-Skytree."},
+   {t:"09:30", name:"נאקמיסה-דורי: מזכרות", type:"must", lat:35.71290, lng:139.79640, d:"החנויות נפתחות בסביבות 09:30."},
+   {t:"10:30", name:"פארק סומידה", type:"opt", lat:35.71480, lng:139.80080},
+   {t:"11:00", name:"Tokyo Skytree", type:"opt", lat:35.71006, lng:139.81070, d:"יש כבר Shibuya Sky ב-3/11. אם אין חשק לשתי תצפיות, לראות מבחוץ."},
+   {t:"12:00", name:"🚆 מ-Oshiage, קו Asakusa ישיר ל-Daimon (25 דק׳), בבית ב-12:30", move:true},
+   {t:"12:30", name:"🍲 בישולים לשבת. כניסת שבת ב-16:30, ארוחה בחב\"ד.", move:true},
+  ],
+  note:"<b>קאפבאשי עבר ל-5/11</b>, ביחד עם הסדנה. ככה ביום שישי חוזרים הביתה בצהריים, ויש זמן לבשל."},
+ {id:"d3110", date:"שבת 31/10", theme:"שבת ליד הבית ← האלווין", color:"#c084fc", status:"locked",
+  rail:"כ-45 דק׳ (במוצאי שבת)", walk:"כ-4 ק״מ",
+  stops:[
+   {t:"10:30", name:"פארק Shiba", type:"must", lat:35.65560, lng:139.74930},
+   {t:"11:00", name:"מקדש Zōjō-ji ומגדל טוקיו ברקע", type:"must", lat:35.65750, lng:139.74830},
+   {t:"11:30", name:"גן הג'יזו ב-Zōjō-ji", type:"opt", isNew:true, lat:35.65690, lng:139.74760, d:"מאות פסלים קטנים עם כובעים אדומים ושבשבות."},
+   {t:"12:00", name:"מגדל טוקיו מלמטה", type:"must", lat:35.65858, lng:139.74543, d:"רק מבחוץ."},
+   {t:"12:30", name:"Shiba Tōshō-gū", type:"opt", isNew:true, lat:35.65730, lng:139.74660, d:"עץ גינקו ענק בן 350 שנה, שמצהיב בנובמבר."},
+   {t:"17:26", name:"צאת שבת", move:true},
+   {t:"18:00", name:"🚆 מ-Daimon, קו Ōedo ל-Higashi-Shinjuku (20 דק׳)", move:true},
+   {t:"18:25", name:"החתול בתלת-ממד: המסך בכיכר Cross Shinjuku", type:"opt", isNew:true, lat:35.69170, lng:139.70220, d:"בדרך מהרכבת לקבוקיצ'ו, ביציאה המזרחית של שינג'וקו. חתול ענק \"יוצא\" מהמסך. 5 דקות וממשיכים."},
+   {t:"18:40", name:"קבוקיצ'ו: ראש גודזילה", type:"must", lat:35.69505, lng:139.70191},
+   {t:"19:00", name:"קבוקיצ'ו: האלווין ברחובות", type:"must", lat:35.69380, lng:139.70300},
+   {t:"20:30", name:"Omoide Yokocho", type:"must", lat:35.69270, lng:139.69958},
+   {t:"21:15", name:"Golden Gai", type:"opt", isNew:true, lat:35.69400, lng:139.70480, d:"סמטאות של ברים זעירים. בליל האלווין מאוד צפוף."},
+   {t:"23:30", name:"🚆 קו Ōedo הביתה (25 דק׳) או מונית", move:true},
+  ]},
+ {id:"d0111", date:"ראשון 1/11", theme:"קמים לאט ← הראג'וקו ← אקיהברה", color:"#f5b83d", status:"open",
+  rail:"כ-60 דק׳", walk:"כ-6 ק״מ",
+  stops:[
+   {t:"בוקר", name:"😴 <b>ישנים.</b> ארוחת בוקר בבית, בלי שעון מעורר.", move:true},
+   {t:"או 09:00", name:"<b>אם קמים:</b> גן Hama-rikyū ובית התה על האגם", type:"opt", isNew:true, lat:35.66000, lng:139.76320, d:"15 דק׳ הליכה מהבית, נפתח ב-09:00 (300 ין). גן של שוגונים על המפרץ, עם מאצ'ה בבית תה על המים. בשבת אי אפשר לשלם על הכניסה, אז ראשון הוא הזמן שלו."},
+   {t:"או 10:00", name:"או: גן מוזיאון Nezu באומוטסנדו", type:"opt", isNew:true, lat:35.66220, lng:139.71700, d:"נפתח ב-10:00. גן יער עם בריכה ובתי תה, 10 דק׳ מ-Cat Street, כלומר על הדרך. צריך להזמין כרטיס עם שעה באתר."},
+   {t:"או 10:30", name:"או: שוק הפשפשים במקדש Tōgō", type:"opt", isNew:true, lat:35.67100, lng:139.70420, d:"צמוד לטקשיטה. מתקיים בחלק מימי הראשון, ו-1/11 הוא הראשון הראשון בחודש, אבל צריך לבדוק את הלוח. מתחיל מוקדם בבוקר."},
+   {t:"10:30", name:"🚆 מ-Hamamatsucho, קו Yamanote להראג'וקו (25 דק׳)", move:true},
+   {t:"11:00", name:"אומוטסנדו ו-Cat Street", type:"opt", lat:35.66660, lng:139.70700, d:"החנויות נפתחות ב-11:00."},
+   {t:"11:45", name:"רחוב טקשיטה", type:"must", lat:35.67100, lng:139.70520},
+   {t:"12:30", name:"פארק יויוגי: <b>רקדני הרוקבילי</b>", type:"must", lat:35.67006, lng:139.69497, d:"רק בראשון. בגשם הם לא מופיעים."},
+   {t:"13:30", name:"🚆 מהראג'וקו, JR לאקיהברה (25 דק׳), צהריים בדרך", move:true},
+   {t:"13:30", name:"<b>הבנות:</b> נשארות לקניות באומוטסנדו, Cat Street ו-Laforet", type:"opt", split:true, lat:35.66890, lng:139.70570, d:"ב-17:30 קו Ginza ישיר לגינזה (15 דק׳), ונפגשים עם הבנים בקאבוקי-זה. אם לא הולכים לקאבוקי, נפגשים בבית."},
+   {t:"14:15", name:"אקיהברה: <b>המדרחוב</b> (עד 17:00)", type:"must", lat:35.69965, lng:139.77137, d:"Yodobashi, ארקייד SEGA, חנויות רטרו, Radio Kaikan."},
+   {t:"15:30", name:"בית הגאצ'פון (Gachapon Kaikan)", type:"opt", isNew:true, lat:35.70030, lng:139.77070, d:"מאות מכונות קפסולות עם צעצועים מוזרים. 200–500 ין לסיבוב. זו יפן המוזרה בגרסה הכי מרוכזת."},
+   {t:"17:00", name:"מקדש Kanda Myōjin", type:"opt", lat:35.70200, lng:139.76790, d:"10 דק׳ הליכה, מואר בערב."},
+   {t:"17:45", name:"🚆 קו Hibiya לגינזה (10 דק׳)", move:true},
+   {t:"18:00", name:"<b>קאבוקי-זה</b>: מערכה בודדת", type:"opt", isNew:true, lat:35.66950, lng:139.76780, d:"רק אם יש כוח. 60–90 דק׳, בערך 2,000 ין. משם 10 דק׳ הביתה."},
+   {t:"או", name:"🚆 הביתה ישר מאקיהברה (20 דק׳)", move:true},
+  ],
+  note:"<b>אחרי התיקון:</b> הבוקר פתוח. חובה מתחילה רק ב-11:45, יש שלושה דברים שחובה לראות, והערב אופציונלי. בלי ג'יבלי היום יצא מאוזן."},
+ {id:"d0211", date:"שני 2/11", theme:"המפרץ: Planets ← אודייבה ← שקיעה", color:"#22d3ee", status:"locked",
+  rail:"כ-55 דק׳", walk:"כ-6 ק״מ",
+  stops:[
+   {t:"08:20", name:"🚆 הליכה ל-Hinode, ומשם Yurikamome ל-Shin-Toyosu (25 דק׳)", move:true},
+   {t:"09:00", name:"teamLab Planets", type:"must", lat:35.64910, lng:139.78980},
+   {t:"11:15", name:"שוק טויוסו: גן הגג", type:"opt", lat:35.64540, lng:139.78400, d:"חינם. תצפית על המפרץ."},
+   {t:"12:45", name:"🚆 Yurikamome ל-Ariake-Tennis-no-mori (5 דק׳)", move:true},
+   {t:"13:15", name:"Small Worlds", type:"must", lat:35.63520, lng:139.79130},
+   {t:"14:45", name:"🚆 Yurikamome ל-Daiba (10 דק׳)", move:true},
+   {t:"15:00", name:"ה-Gundam ב-DiverCity", type:"must", lat:35.62505, lng:139.77560, d:"לבדוק את שעות מופע ה\"טרנספורמציה\"."},
+   {t:"15:20", name:"Unko Museum: מוזיאון הקקי", type:"opt", isNew:true, lat:35.62520, lng:139.77580, d:"באותו קניון של ה-Gundam. מוזיאון צבעוני, מטופש ואינטראקטיבי לגמרי. זו יפן המוזרה במיטבה. לבדוק שהוא עדיין פתוח."},
+   {t:"15:45", name:"פסל החירות: <b>שקיעה על גשר ריינבו</b>", type:"must", lat:35.62760, lng:139.77190, d:"השקיעה בסביבות 16:40."},
+   {t:"17:15", name:"Joypolis", type:"opt", lat:35.62850, lng:139.77570},
+   {t:"17:15", name:"או: מעבורת מים מאודייבה ל-Hinode (20 דק׳)", type:"opt", isNew:true, lat:35.62990, lng:139.77420, d:"10 דק׳ הליכה מהדירה. לבדוק שעות, כי בחורף ההפלגה האחרונה מוקדמת."},
+   {t:"ערב", name:"🚆 או Yurikamome מ-Daiba ל-Hinode (12 דק׳)", move:true},
+  ]},
+ {id:"d0311", date:"שלישי 3/11 🎌", theme:"מייג'י ← גיואן ← שיבויה", color:"#ff6b9a", status:"locked",
+  rail:"כ-65 דק׳", walk:"כ-7 ק״מ",
+  stops:[
+   {t:"08:15", name:"🚆 מ-Hamamatsucho, קו Yamanote להראג'וקו (25 דק׳)", move:true},
+   {t:"08:45", name:"מקדש מייג'י: פסטיבל הסתיו (נו ובוגאקו)", type:"must", lat:35.67640, lng:139.69933},
+   {t:"צהריים", name:"<b>יאבוסמה</b>", type:"must", lat:35.67400, lng:139.69700, d:"להגיע שעה לפני כדי לתפוס מקום ליד החבל."},
+   {t:"13:30", name:"🚆 JR מ-Yoyogi ל-Sendagaya (5 דק׳), או 25 דק׳ הליכה", move:true},
+   {t:"13:45", name:"שינג'וקו גיואן: תערוכת החרציות", type:"must", lat:35.68518, lng:139.71005, d:"להיכנס משער Sendagaya."},
+   {t:"15:00", name:"Gaien Ginkgo Avenue", type:"opt", lat:35.67272, lng:139.72057, d:"כנראה עוד ירוק."},
+   {t:"15:30", name:"🚆 JR ל-Shibuya (15 דק׳)", move:true},
+   {t:"16:00", name:"<b>Shibuya Sky</b> בשקיעה", type:"must", lat:35.65840, lng:139.70220},
+   {t:"17:15", name:"מעבר החצייה של שיבויה והאצ'יקו", type:"must", lat:35.65950, lng:139.70050},
+   {t:"17:45", name:"Miyashita Park (פארק על גג)", type:"opt", isNew:true, lat:35.66200, lng:139.70260},
+   {t:"18:15", name:"MEGA Don Quijote שיבויה", type:"opt", isNew:true, lat:35.66040, lng:139.69790, d:"כאוס של כמה קומות: חטיפים, מוצרי טיפוח, תחפושות ומכשירים מוזרים. פתוח 24 שעות. המקום הכי זול למזכרות."},
+   {t:"18:45", name:"Parco (נינטנדו ופוקימון)", type:"opt", lat:35.66200, lng:139.69880},
+   {t:"19:00", name:"Nonbei Yokocho", type:"opt", lat:35.66000, lng:139.70260},
+   {t:"20:00", name:"🚆 קו Yamanote ל-Hamamatsucho (25 דק׳)", move:true},
+  ]},
+ {id:"d0411", date:"רביעי 4/11", theme:"ניקו", color:"#3ecf8e", status:"locked", daytrip:true,
+  rail:"<b>כ-5.5 שעות</b> (רכבות, אוטובוסים ומונית)", walk:"כ-6 ק״מ",
+  stops:[
+   {t:"05:40", name:"🚆 הליכה ל-Daimon (8 דק׳), ומשם קו Toei Asakusa ישיר לאסאקוסה (כ-18 דק׳). משם 3–5 דק׳ הליכה ל-Tobu Asakusa. או מונית ב-05:55", move:true},
+   {t:"06:30", name:"🚆 <b>Revaty Kegon 1</b> (רכבת 1001) מ-Tobu Asakusa, מגיעה ל-Tobu-Nikko ב-08:25", move:true},
+   {t:"08:30", name:"🚌 אוטובוס בכביש Irohazaka לצ'וזנג'י (45 דק׳)", move:true},
+   {t:"09:15", name:"מפלי קגון", type:"must", lat:36.73800, lng:139.50230},
+   {t:"10:15", name:"אגם צ'וזנג'י", type:"must", lat:36.73560, lng:139.49100},
+   {t:"11:15", name:"🚌 אוטובוס חזרה למטה (45 דק׳)", move:true},
+   {t:"13:00", name:"גשר שינקיו", type:"must", lat:36.75360, lng:139.60360},
+   {t:"13:15", name:"Tōshō-gū", type:"must", lat:36.75800, lng:139.59880},
+   {t:"14:30", name:"Futarasan", type:"must", lat:36.75970, lng:139.59570},
+   {t:"14:50", name:"Taiyū-in", type:"opt", isNew:true, lat:36.75880, lng:139.59480, d:"צמוד ל-Futarasan, עם הרבה פחות אנשים."},
+   {t:"15:20", name:"Kanmangafuchi: פסלי הג'יזו", type:"opt", lat:36.74830, lng:139.58950},
+   {t:"17:22", name:"🚆 <b>Revaty Kegon 46</b> (רכבת 1046) מ-Tobu-Nikko, באסאקוסה ב-19:15, ומשם קו Asakusa הביתה (20 דק׳)", move:true},
+  ],
+  note:"היום עם הכי הרבה זמן ישיבה. זה בסדר, כי יש בו שני קטעי רכבת ארוכים שבהם אפשר לנוח."},
+ {id:"d0511", date:"חמישי 5/11", theme:"צוקיג'י ← אואנו ← יאנקה ← קאפבאשי ← Borderless", color:"#5aa9ff", status:"open",
+  rail:"כ-55 דק׳", walk:"כ-8 ק״מ",
+  stops:[
+   {t:"07:00", name:"🚆 מ-Daimon, קו Ōedo ל-Tsukijishijo (7 דק׳)", move:true},
+   {t:"07:15", name:"השוק החיצוני של צוקיג'י", type:"opt", lat:35.66550, lng:139.77070, d:"לפני ההמונים. יש שם גם את חנות הסכינים Aritsugu, מ-1560."},
+   {t:"08:50", name:"🚆 קו Hibiya ישיר מ-Tsukiji לאואנו (15 דק׳)", move:true},
+   {t:"09:30", name:"המוזיאון הלאומי של טוקיו", type:"must", lat:35.71884, lng:139.77652},
+   {t:"11:30", name:"יאנקה: Yanaka Ginza ובית הקברות", type:"must", lat:35.72770, lng:139.76630, d:"12 דק׳ הליכה."},
+   {t:"12:15", name:"מקדש Nezu: מנהרת שערי טוריי", type:"opt", isNew:true, lat:35.72020, lng:139.76070},
+   {t:"13:00", name:"שוק אמיוקו", type:"must", lat:35.70900, lng:139.77463},
+   {t:"13:40", name:"🚆 קו Ginza מ-Ueno ל-Tawaramachi (5 דק׳)", move:true},
+   {t:"14:00", name:"<b>סדנת אוכל פלסטיק מזויף</b>: Ganso Shokuhin Sample-ya", type:"must", isNew:true, lat:35.71260, lng:139.78800, d:"מכינים טמפורה וחסה מפלסטיק, כמו בחלונות הראווה של המסעדות. כשעה. <b>צריך הזמנה מראש</b>, ולבדוק שיש סדנה ביום חמישי בשעה הזאת."},
+   {t:"15:15", name:"קאפבאשי: ציוד מטבח <b>וסכינים</b>", type:"must", lat:35.71380, lng:139.78840, d:"חנויות הסכינים הטובות הן Kamata ו-Kama-Asa. רוב החנויות נסגרות ב-17:00."},
+   {t:"16:45", name:"🚆 קו Ginza מ-Tawaramachi ל-Toranomon (20 דק׳), ו-10 דק׳ הליכה", move:true},
+   {t:"17:30", name:"<b>teamLab Borderless</b>", type:"must", lat:35.66207, lng:139.74327},
+   {t:"20:30", name:"🚶 הליכה הביתה (25 דק׳)", move:true},
+  ],
+  note:"<b>מה השתנה:</b> ארמון הקיסר, ניג'ובאשי ו-KITTE עברו לשבת 7/11. שלושתם חינם, בחוץ, וצמודים לשוק ה-Oedo, אז הם מתאימים לשבת. במקומם נכנסו קאפבאשי והסדנה, 15 דק׳ מאואנו. אם צריך לקצץ, צוקיג'י יורד ראשון."},
+ {id:"d0611a", date:"שישי 6/11 · A", theme:"קמאקורה בבוקר (ההמלצה שלי)", color:"#a3e635", status:"open", daytrip:true,
+  rail:"כ-2 שעות", walk:"כ-6 ק״מ",
+  stops:[
+   {t:"07:15", name:"🚶 הליכה ל-Shimbashi (20 דק׳)", move:true},
+   {t:"07:40", name:"🚆 JR Yokosuka לקמאקורה (55 דק׳), ומשם Enoden ל-Hase (5 דק׳)", move:true},
+   {t:"08:50", name:"הבודהה הגדול (Kōtoku-in)", type:"must", lat:35.31670, lng:139.53580},
+   {t:"09:30", name:"Hase-dera: תצפית על המפרץ", type:"must", lat:35.31260, lng:139.53350},
+   {t:"10:30", name:"🚆 Enoden חזרה לקמאקורה (5 דק׳)", move:true},
+   {t:"10:45", name:"Komachi-dori", type:"opt", lat:35.32020, lng:139.55120},
+   {t:"11:15", name:"Tsurugaoka Hachimangū", type:"must", lat:35.32590, lng:139.55650},
+   {t:"12:00", name:"Hōkoku-ji: יער הבמבוק", type:"opt", isNew:true, lat:35.31960, lng:139.56470},
+   {t:"13:15", name:"🚆 JR חזרה ל-Shimbashi (55 דק׳), בבית בסביבות 14:30", move:true},
+   {t:"16:25", name:"כניסת שבת", move:true},
+  ],
+  note:"<b>צריך ממך החלטה: A או B.</b>"},
+ {id:"d0611b", date:"שישי 6/11 · B", theme:"ריוגוקו, סדנת זכוכית וקניות בגינזה", color:"#94a3b8", status:"open",
+  rail:"כ-45 דק׳", walk:"כ-4 ק״מ",
+  stops:[
+   {t:"08:40", name:"🚆 מ-Daimon, קו Ōedo ישיר לריוגוקו (20 דק׳)", move:true},
+   {t:"09:00", name:"מוזיאון הסומו בריוגוקו", type:"must", lat:35.69690, lng:139.79340},
+   {t:"09:45", name:"מוזיאון Hokusai", type:"opt", isNew:true, lat:35.69670, lng:139.79820},
+   {t:"10:45", name:"<b>סדנת Edo Kiriko</b>: חריטה בזכוכית, בסומידה", type:"opt", isNew:true, lat:35.69700, lng:139.81400, d:"מלאכה מסורתית של טוקיו. חורטים דוגמה על כוס ולוקחים אותה הביתה. כ-90 דק׳, בערך 4,000–6,000 ין. צריך להזמין מראש. תחנה אחת מריוגוקו (Kinshichō). <b>זה יום שישי</b>, אז רק אם מבשלים לשבת כבר ביום חמישי בלילה."},
+   {t:"10:45", name:"<b>או פיצול:</b> הבנות יוצאות ישר לגינזה, והבנים בסדנה", type:"opt", split:true, lat:35.67170, lng:139.76500, d:"הבנים מצטרפים בסביבות 12:45 (20 דק׳ ברכבת)."},
+   {t:"12:30", name:"🚆 מ-Kinshichō, JR ל-Shimbashi, והליכה לגינזה (20 דק׳)", move:true},
+   {t:"12:45", name:"גינזה: Itoya, Ginza Six, Uniqlo", type:"must", lat:35.67250, lng:139.76400},
+   {t:"14:30", name:"🚆 קו Asakusa מ-Higashi-Ginza ל-Daimon (6 דק׳)", move:true},
+  ]},
+ {id:"d0711", date:"שבת 7/11", theme:"Atago ← היביה ← הארמון ← Oedo Market ← גינזה", color:"#fb7185", status:"open",
+  rail:"אין (שבת)", walk:"<b>כ-10 ק״מ</b>",
+  stops:[
+   {t:"09:15", name:"Atago Jinja: 86 מדרגות", type:"must", lat:35.66450, lng:139.74850, d:"1.6 ק״מ מהדירה."},
+   {t:"10:15", name:"פארק היביה", type:"must", lat:35.67370, lng:139.75600},
+   {t:"10:45", name:"גשר ניג'ובאשי", type:"must", lat:35.68023, lng:139.75359},
+   {t:"11:15", name:"ארמון הקיסר: הגנים המזרחיים", type:"must", lat:35.68560, lng:139.75800, d:"פתוח בשבת. הכניסה בחינם, אבל בשער נותנים אסימון פלסטיק שמחזירים ביציאה. תחליטו אם זה מתאים לכם."},
+   {t:"12:30", name:"תחנת טוקיו: חזית הלבנים האדומות", type:"must", lat:35.68120, lng:139.76710},
+   {t:"12:50", name:"גג KITTE", type:"opt", lat:35.67953, lng:139.76544, d:"חינם, עולים ברגל או בדרגנוע. תצפית על התחנה."},
+   {t:"13:15", name:"<b>Oedo Antique Market</b>, Tokyo International Forum", type:"must", lat:35.67650, lng:139.76390, d:"בשבת רק מסתכלים. השוק פתוח עד בסביבות 16:00."},
+   {t:"14:30", name:"גינזה: המדרחוב", type:"opt", lat:35.67170, lng:139.76500},
+   {t:"15:30", name:"🚶 הליכה הביתה (כ-3 ק״מ). צאת שבת בסביבות 17:20.", move:true},
+  ],
+  note:"יום ההליכה הכי ארוך, בכוונה. הכול בחוץ ובחינם, ואין שום דבר לנעול."},
+];
+
+// ---------- render ----------
+const daysEl = document.getElementById('days');
+const tt = document.getElementById('transitTable');
+DAYS.forEach(day=>{
+  let n = 0;
+  const steps = day.stops.map((s,i)=>{
+    if(s.move) return `<div class="step move"><span class="n none">·</span><span class="t">${s.t}</span><span>${s.name}</span></div>`;
+    n++; s._n = n;
+    const tag = `<span class="tag ${s.type}">${s.type==='must'?'חובה':'אופציונלי'}</span>`;
+    const nw = (s.isNew ? '<span class="tag new">רעיון שלי</span>' : '') + (s.split ? '<span class="tag split">🛍️ פיצול</span>' : '');
+    return `<div class="step ${s.type}" data-day="${day.id}" data-i="${i}">
+      <span class="n">${n}</span><span class="t">${s.t}</span>
+      <span>${tag}${nw}${s.name}${s.d?`<span class="d">${s.d}</span>`:''}</span></div>`;
+  }).join('');
+  const pts = day.stops.filter(s=>!s.move);
+  const must = pts.filter(s=>s.type==='must');
+  const mkUrl = arr=>{
+    const seq = (day.daytrip? arr : [HOME,...arr,HOME]).slice(0,10);
+    return 'https://www.google.com/maps/dir/'+seq.map(p=>`${p.lat},${p.lng}`).join('/');
+  };
+  const div = document.createElement('div');
+  div.className='day'; div.id=day.id; div.style.setProperty('--c',day.color);
+  div.innerHTML = `
+    <div class="day-head">
+      <span class="date">${day.date}<span class="status ${day.status}">${day.status==='locked'?'🔒 סגור':'🟡 פתוח'}</span></span>
+      <span class="theme">${day.theme}</span>
+    </div>
+    <div class="transit"><span>🚆 תחבורה: <b>${day.rail}</b></span><span>🚶 הליכה: <b>${day.walk}</b></span></div>
+    ${steps}
+    ${day.note?`<div class="note">${day.note}</div>`:''}
+    <div class="links">
+      <a href="${mkUrl(must)}" target="_blank">🗺️ החובה בגוגל מפות</a>
+      <a href="${mkUrl(pts)}" target="_blank">🗺️ המסלול המלא</a>
+    </div>`;
+  daysEl.appendChild(div);
+  tt.insertAdjacentHTML('beforeend',`<tr><td>${day.date}</td><td>${day.rail}</td><td>${day.walk}</td></tr>`);
+});
+
+// ---------- map ----------
+const map = L.map('map').setView([35.68,139.75],12);
+const google = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&hl=en&gl=us&x={x}&y={y}&z={z}',{
+  subdomains:'0123', attribution:'&copy; Google', maxZoom:20
+});
+const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{
+  attribution:'Tiles &copy; Esri', maxZoom:19
+});
+let tileErrors = 0;
+google.on('tileerror',()=>{ if(++tileErrors===3){ map.removeLayer(google); esri.addTo(map); } });
+google.addTo(map);
+L.control.layers({'English (Google)':google,'Esri':esri},null,{position:'topleft'}).addTo(map);
+
+L.marker([HOME.lat,HOME.lng],{icon:L.divIcon({className:'home-icon',html:'🏠',iconSize:[24,24],iconAnchor:[12,12]})})
+  .bindPopup('<b>'+HOME.name+'</b>').addTo(map);
+
+const layers = {}; const markerIndex = {};
+DAYS.forEach(day=>{
+  const g = L.layerGroup(); markerIndex[day.id]={};
+  const line = day.daytrip ? [] : [[HOME.lat,HOME.lng]];
+  day.stops.forEach((s,i)=>{
+    if(s.move) return;
+    const icon = L.divIcon({className:'',html:`<div class="num-icon ${s.type==='opt'?'opt':''}" style="background:${day.color};border-color:${day.color};width:24px;height:24px">${s._n}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
+    const m = L.marker([s.lat,s.lng],{icon}).bindPopup(
+      `<div style="color:#111"><b>${s._n}. ${s.name}</b><br><small>${day.date} · ${s.t} · ${s.type==='must'?'חובה':'אופציונלי'}</small>${s.d?'<br><small>'+s.d+'</small>':''}</div>`);
+    g.addLayer(m); markerIndex[day.id][i]=m;
+    if(!String(s.t).startsWith('או')) line.push([s.lat,s.lng]);
+  });
+  if(!day.daytrip) line.push([HOME.lat,HOME.lng]);
+  g.addLayer(L.polyline(line,{color:day.color,weight:3,opacity:.85,dashArray:'6 6'}));
+  layers[day.id]=g;
+});
+
+const btns = document.getElementById('btns');
+function mkBtn(id,label,color){
+  const b=document.createElement('button'); b.dataset.id=id;
+  b.innerHTML=(color?`<span class="dot" style="background:${color}"></span>`:'')+label;
+  b.onclick=()=>{ showDay(id); if(id!=='all') scrollToDay(id); };
+  btns.appendChild(b);
+}
+mkBtn('all','כל טוקיו',null);
+DAYS.forEach(d=>mkBtn(d.id,d.date,d.color));
+
+let currentId=null;
+function showDay(id){
+  if(id===currentId) return;
+  currentId=id;
+  Object.values(layers).forEach(l=>map.removeLayer(l));
+  let bounds=[];
+  const ids = id==='all' ? DAYS.filter(d=>!d.daytrip).map(d=>d.id) : [id];
+  const trip = id!=='all' && DAYS.find(d=>d.id===id).daytrip;
+  if(!trip) bounds.push([HOME.lat,HOME.lng]);
+  ids.forEach(did=>{
+    layers[did].addTo(map);
+    DAYS.find(d=>d.id===did).stops.forEach(s=>{ if(!s.move) bounds.push([s.lat,s.lng]); });
+  });
+  map.fitBounds(bounds,{padding:[30,30]});
+  document.querySelectorAll('.day-btns button').forEach(b=>b.classList.toggle('active',b.dataset.id===id));
+  document.querySelectorAll('.day').forEach(d=>d.classList.toggle('current',d.id===id));
+}
+
+// scroll sync: the day card nearest the top of the text pane drives the map
+const pane = document.getElementById('textPane');
+let suppressSync=false;
+function scrollToDay(id){
+  suppressSync=true;
+  document.getElementById(id).scrollIntoView({behavior:'smooth',block:'start'});
+  setTimeout(()=>suppressSync=false,900);
+}
+function syncFromScroll(){
+  if(suppressSync) return;
+  const top = pane.getBoundingClientRect().top + 120;
+  let best=null;
+  document.querySelectorAll('.day').forEach(d=>{
+    const r=d.getBoundingClientRect();
+    if(r.top<=top && r.bottom>top) best=d.id;
+  });
+  showDay(best||'all');
+}
+pane.addEventListener('scroll',()=>{ clearTimeout(pane._t); pane._t=setTimeout(syncFromScroll,120); });
+window.addEventListener('scroll',()=>{ clearTimeout(pane._t); pane._t=setTimeout(syncFromScroll,120); });
+
+document.querySelectorAll('.step[data-day]').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const m = markerIndex[el.dataset.day]?.[el.dataset.i];
+    if(!m) return;
+    showDay(el.dataset.day);
+    map.setView(m.getLatLng(),15); m.openPopup();
+  });
+});
+
+showDay('all');
+setTimeout(()=>map.invalidateSize(),200);
+</script>
+</body>
+</html>
