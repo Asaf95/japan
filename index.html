@@ -27,11 +27,30 @@
   .pane{overflow-y:auto;padding:20px 24px 80px;}
   .map-pane{border-inline-start:1px solid var(--border);position:relative;}
   #map{position:absolute;inset:0;}
+  #mapbtn{position:fixed;bottom:16px;left:16px;z-index:1000;background:var(--accent);color:#0f1115;border:none;border-radius:24px;padding:10px 16px;font-weight:800;font-size:.9rem;font-family:inherit;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);}
+  body.nomap .map-pane{display:none;} body.nomap .layout{grid-template-columns:1fr;}
+  body.nomap .pane{max-width:1000px;width:100%;margin:0 auto;}
+  body.maponly #mapbtn{display:none;} body.maponly .map-pane{display:block !important;height:100vh;}
   @media (max-width:900px){
     body{overflow:auto;display:block;}
-    .layout{display:flex;flex-direction:column;}
-    .map-pane{height:45vh;position:sticky;top:0;z-index:5;order:-1;}
-    .pane{overflow:visible;}
+    header{padding:8px 10px 0;} header h1{font-size:1.05rem;} header .facts{font-size:.72rem;margin:0 0 6px;}
+    .secs,.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+    .secs::-webkit-scrollbar,.chips::-webkit-scrollbar{display:none;}
+    .secs button{flex-shrink:0;padding:6px 10px;font-size:.85rem;}
+    .chips{padding:8px 10px;min-height:0;position:sticky;top:0;z-index:6;}
+    .chips button{flex-shrink:0;white-space:nowrap;}
+    html,body{overflow-x:hidden;max-width:100vw;}
+    .layout{display:flex;flex-direction:column;width:100%;}
+    .pane{width:100%;min-width:0;overflow-wrap:break-word;}
+    .meta span{white-space:normal;}
+    .map-pane{height:42vh;position:sticky;top:44px;z-index:5;order:-1;border-inline-start:none;border-bottom:1px solid var(--border);}
+    .pane{overflow:visible;padding:12px 10px 90px;}
+    .dayhead,.card{padding:12px;} .dayhead .date{font-size:1.15rem;}
+    .tl{padding:4px 10px;}
+    .step{grid-template-columns:48px 24px 1fr;gap:6px;font-size:.88rem;}
+    .step .t{font-size:.8rem;}
+    table{display:block;overflow-x:auto;font-size:.78rem;} th,td{padding:5px 6px;min-width:64px;} td:first-child{min-width:90px;}
+    .nav .navbtn{padding:8px 12px;}
   }
   h2{font-size:1.15rem;margin:28px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--border);color:var(--accent);}
   h2:first-child{margin-top:0;}
@@ -105,6 +124,7 @@
   <div class="secs" id="secs"></div>
 </header>
 <div class="chips" id="chips"></div>
+<button id="mapbtn" onclick="toggleMap()"></button>
 <div class="layout">
   <div class="pane" id="pane"></div>
   <div class="map-pane"><div id="map" dir="ltr"></div></div>
@@ -239,7 +259,7 @@ function renderDay(id){
      ${prev?`<button class="navbtn" onclick="go('${prev.sec}','${prev.id}')">→ ${prev.date}</button>`:'<span></span>'}
      ${next?`<button class="navbtn" onclick="go('${next.sec}','${next.id}')">${next.date} ←</button>`:'<span></span>'}
    </div>`;
-  pane.querySelectorAll('.step[data-i]').forEach(el=>el.onclick=()=>{ const m=markers[el.dataset.i]; if(m){ map.setView(m.getLatLng(),15); m.openPopup(); }});
+  pane.querySelectorAll('.step[data-i]').forEach(el=>el.onclick=()=>{ const k=el.dataset.i; if(!markers[k]) return; if(!mapOn) toggleMap(true); const m=markers[k]; map.setView(m.getLatLng(),15); m.openPopup(); });
   drawDays([day],true);
 }
 function dayRow(d){
@@ -304,6 +324,13 @@ function renderTasks(){
    ${groups.map(g=>`<h3>${g}</h3>`+all.filter(t=>t.g===g).map(taskHtml).join('')).join('')}`;
   drawRoute();
 }
+// ---------- map on/off (remembered; phones start without the map) ----------
+const phone = matchMedia('(max-width:900px)');
+let mapOn = localStorage.getItem('jp_map')!==null ? localStorage.getItem('jp_map')==='1' : !phone.matches;
+function applyMap(){ document.body.classList.toggle('nomap',!mapOn); document.getElementById('mapbtn').textContent = mapOn?'✕ הסתר מפה':'🗺️ הצג מפה'; }
+function toggleMap(on){ mapOn = on===undefined ? !mapOn : on; localStorage.setItem('jp_map',mapOn?'1':'0'); applyMap();
+  const y=window.scrollY, py=pane.scrollTop; route(); window.scrollTo(0,y); pane.scrollTop=py; }
+applyMap();
 // ---------- navigation ----------
 const secsEl = document.getElementById('secs'), chipsEl = document.getElementById('chips');
 TABS.forEach(t=>{ const b=document.createElement('button'); b.dataset.id=t.id; b.style.setProperty('--sc',t.color);
@@ -320,6 +347,7 @@ function route(){
       return `<button class="${d.id===dayId?'active':''}" style="--cc:${d.color}" onclick="go('${sec}','${d.id}')"><span class="dot" style="background:${d.color}"></span>${d.date}${nq?`<span class="qn">📋${nq}</span>`:''}</button>`;}).join('')
     : `<span style="color:var(--muted);font-size:.85rem;padding-top:4px">${sec==='overview'?'בחרו קטע למעלה, ואז יום. או לחצו על יום בטבלה.':'✔ מסמנים משימה כשהיא נעשתה. לחיצה על תאריך פותחת את היום.'}</span>`;
   pane.scrollTop=0; window.scrollTo(0,0);
+  const ac=chipsEl.querySelector('.active'); if(ac) ac.scrollIntoView({inline:'center',block:'nearest'});
   if(sec==='overview') renderOverview();
   else if(sec==='tasks') renderTasks();
   else if(dayId && byId[dayId]) renderDay(dayId);
